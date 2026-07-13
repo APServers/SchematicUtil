@@ -1,0 +1,9 @@
+[{
+  "modid": "swsc",
+  "name": "SWSC Schematic Tool",
+  "description": "Captures and pastes structures in SWSC format with full modded block support.",
+  "version": "1.0.0",
+  "mcversion": "1.12.2",
+  "authorList": ["DecentStudio"],
+  "dependencies": []
+}]
