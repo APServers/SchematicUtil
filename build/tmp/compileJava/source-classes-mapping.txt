@@ -1,0 +1,13 @@
+net/decentstudio/swsc/schematic/SwscSchematic.java
+ net.decentstudio.swsc.schematic.SwscSchematic
+net/decentstudio/swsc/paste/PasteManager.java
+ net.decentstudio.swsc.paste.PasteManager
+ net.decentstudio.swsc.paste.PasteManager$PasteJob
+net/decentstudio/swsc/schematic/SwscSaver.java
+ net.decentstudio.swsc.schematic.SwscSaver
+net/decentstudio/swsc/SwscMod.java
+ net.decentstudio.swsc.SwscMod
+net/decentstudio/swsc/schematic/SwscLoader.java
+ net.decentstudio.swsc.schematic.SwscLoader
+net/decentstudio/swsc/command/SwscCommand.java
+ net.decentstudio.swsc.command.SwscCommand
