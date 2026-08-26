@@ -1,7 +1,7 @@
 package net.decentstudio.swsc;
 
 import net.decentstudio.swsc.command.SwscCommand;
-import net.decentstudio.swsc.paste.PasteManager;
+import net.decentstudio.swsc.tool.SwscToolManager;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
@@ -12,11 +12,11 @@ import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 public class SwscMod {
 
     public static final String MODID   = "swsc";
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = "2.0.0";
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
-        MinecraftForge.EVENT_BUS.register(new PasteManager());
+        MinecraftForge.EVENT_BUS.register(new SwscToolManager());
     }
 
     @Mod.EventHandler

@@ -1,13 +1,25 @@
 net/decentstudio/swsc/schematic/SwscSchematic.java
  net.decentstudio.swsc.schematic.SwscSchematic
-net/decentstudio/swsc/paste/PasteManager.java
- net.decentstudio.swsc.paste.PasteManager
- net.decentstudio.swsc.paste.PasteManager$PasteJob
-net/decentstudio/swsc/schematic/SwscSaver.java
- net.decentstudio.swsc.schematic.SwscSaver
+net/decentstudio/swsc/tool/SwscToolManager.java
+ net.decentstudio.swsc.tool.SwscToolManager
+ net.decentstudio.swsc.tool.SwscToolManager$1
+ net.decentstudio.swsc.tool.SwscToolManager$Job
+ net.decentstudio.swsc.tool.SwscToolManager$PasteJob
+ net.decentstudio.swsc.tool.SwscToolManager$ScanSaveJob
 net/decentstudio/swsc/SwscMod.java
  net.decentstudio.swsc.SwscMod
-net/decentstudio/swsc/schematic/SwscLoader.java
- net.decentstudio.swsc.schematic.SwscLoader
+net/decentstudio/swsc/schematic/McEditSchematicLoader.java
+ net.decentstudio.swsc.schematic.McEditSchematicLoader
+net/decentstudio/swsc/selection/SwscSelectionManager.java
+ net.decentstudio.swsc.selection.SwscSelectionManager
+net/decentstudio/swsc/schematic/SwscSchematicIO.java
+ net.decentstudio.swsc.schematic.SwscSchematicIO
+net/decentstudio/swsc/schematic/SpongeSchematicLoader.java
+ net.decentstudio.swsc.schematic.SpongeSchematicLoader
 net/decentstudio/swsc/command/SwscCommand.java
  net.decentstudio.swsc.command.SwscCommand
+net/decentstudio/swsc/schematic/LegacyBlockResolver.java
+ net.decentstudio.swsc.schematic.LegacyBlockResolver
+ net.decentstudio.swsc.schematic.LegacyBlockResolver$Resolved
+net/decentstudio/swsc/schematic/SwscSyncSaver.java
+ net.decentstudio.swsc.schematic.SwscSyncSaver
