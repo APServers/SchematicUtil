@@ -3,15 +3,20 @@ package net.decentstudio.swsc.tool;
 import net.decentstudio.swsc.schematic.SwscSchematic;
 import net.decentstudio.swsc.schematic.SwscSchematicIO;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityList;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.Rotation;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.World;
+import net.minecraft.world.WorldServer;
 import net.minecraft.world.gen.structure.StructureBoundingBox;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
@@ -34,6 +39,7 @@ public class SwscToolManager {
 
     private static final int SAVE_VOXELS_PER_TICK  = 4000;
     private static final int PASTE_BLOCKS_PER_TICK = 2000;
+    private static final int CLEAR_BLOCKS_PER_TICK = 4000;
     private static final long PROGRESS_INTERVAL_MS  = 2000;
 
     private static final Queue<Job> QUEUE = new ConcurrentLinkedQueue<>();
@@ -44,16 +50,64 @@ public class SwscToolManager {
     /** @return false if this player already has a schematic job queued/running */
     public static boolean queueSave(BlockPos pos1, BlockPos pos2, BlockPos playerPos,
                                      File outputFile, UUID playerUuid, String playerName) {
+        return queueSave(pos1, pos2, playerPos, outputFile, playerUuid, playerName, 0, false);
+    }
+
+    /**
+     * Same as {@link #queueSave(BlockPos, BlockPos, BlockPos, File, UUID, String)} but scans a
+     * world other than the overworld (e.g. a per-instance dimension).
+     * @return false if this player already has a schematic job queued/running
+     */
+    public static boolean queueSave(BlockPos pos1, BlockPos pos2, BlockPos playerPos,
+                                     File outputFile, UUID playerUuid, String playerName, int dimensionId) {
+        return queueSave(pos1, pos2, playerPos, outputFile, playerUuid, playerName, dimensionId, false);
+    }
+
+    /**
+     * Same as {@link #queueSave(BlockPos, BlockPos, BlockPos, File, UUID, String, int)} but,
+     * when includeEntities is true, also captures non-player entities inside the selection (e.g.
+     * placed NPCs) so they get restored on paste. Never captures {@code EntityPlayer}.
+     * @return false if this player already has a schematic job queued/running
+     */
+    public static boolean queueSave(BlockPos pos1, BlockPos pos2, BlockPos playerPos,
+                                     File outputFile, UUID playerUuid, String playerName,
+                                     int dimensionId, boolean includeEntities) {
         if (!PENDING_PLAYERS.add(playerUuid)) return false;
-        QUEUE.add(new ScanSaveJob(pos1, pos2, playerPos, outputFile, playerUuid, playerName));
+        QUEUE.add(new ScanSaveJob(pos1, pos2, playerPos, outputFile, playerUuid, playerName, dimensionId, includeEntities));
         return true;
     }
 
     /** @return false if this player already has a schematic job queued/running */
     public static boolean queuePaste(SwscSchematic schematic, BlockPos anchor, Rotation rotation,
                                       boolean includeAir, UUID playerUuid, String playerName) {
+        return queuePaste(schematic, anchor, rotation, includeAir, playerUuid, playerName, 0, false);
+    }
+
+    /**
+     * Same as {@link #queuePaste(SwscSchematic, BlockPos, Rotation, boolean, UUID, String)} but
+     * pastes into a world other than the overworld (e.g. a per-instance dimension). Callers that
+     * manage their own instanced worlds (per-player house/tutorial cells, etc.) should use this
+     * overload. Undo ({@link #queueUndo}) restores into the same dimension automatically.
+     * @return false if this player already has a schematic job queued/running
+     */
+    public static boolean queuePaste(SwscSchematic schematic, BlockPos anchor, Rotation rotation,
+                                      boolean includeAir, UUID playerUuid, String playerName, int dimensionId) {
+        return queuePaste(schematic, anchor, rotation, includeAir, playerUuid, playerName, dimensionId, false);
+    }
+
+    /**
+     * Same as {@link #queuePaste(SwscSchematic, BlockPos, Rotation, boolean, UUID, String, int)}
+     * but, when includeEntities is true, also spawns any entities captured with the schematic
+     * (see {@link #queueSave(BlockPos, BlockPos, BlockPos, File, UUID, String, int, boolean)}).
+     * Spawned entities are tracked and removed automatically by {@link #queueUndo}.
+     * @return false if this player already has a schematic job queued/running
+     */
+    public static boolean queuePaste(SwscSchematic schematic, BlockPos anchor, Rotation rotation,
+                                      boolean includeAir, UUID playerUuid, String playerName,
+                                      int dimensionId, boolean includeEntities) {
         if (!PENDING_PLAYERS.add(playerUuid)) return false;
-        QUEUE.add(new PasteJob(schematic, anchor, rotation, includeAir, playerUuid, playerName));
+        QUEUE.add(new PasteJob(schematic, anchor, rotation, includeAir, includeEntities,
+                playerUuid, playerName, dimensionId));
         return true;
     }
 
@@ -64,6 +118,24 @@ public class SwscToolManager {
         if (!PENDING_PLAYERS.add(playerUuid)) return false;
         LAST_PASTE.remove(playerUuid);
         QUEUE.add(new UndoJob(data, playerUuid, playerName));
+        return true;
+    }
+
+    /**
+     * Fills a bounding box (inclusive) with air, tick-budgeted like save/paste. Used to tear down
+     * a previously-pasted instance (e.g. a house or tutorial cell) once it's no longer needed,
+     * independently of and outlasting the in-memory {@link #queueUndo} history. No snapshot is
+     * kept — this is a one-way clear.
+     * @return false if this player already has a schematic job queued/running
+     */
+    public static boolean queueClear(BlockPos pos1, BlockPos pos2, UUID playerUuid, String playerName) {
+        return queueClear(pos1, pos2, playerUuid, playerName, 0);
+    }
+
+    /** Same as {@link #queueClear(BlockPos, BlockPos, UUID, String)} but targets a specific dimension. */
+    public static boolean queueClear(BlockPos pos1, BlockPos pos2, UUID playerUuid, String playerName, int dimensionId) {
+        if (!PENDING_PLAYERS.add(playerUuid)) return false;
+        QUEUE.add(new ClearJob(pos1, pos2, playerUuid, playerName, dimensionId));
         return true;
     }
 
@@ -84,7 +156,7 @@ public class SwscToolManager {
         }
         if (active == null) return;
 
-        World world = FMLCommonHandler.instance().getMinecraftServerInstance().getWorld(0);
+        World world = FMLCommonHandler.instance().getMinecraftServerInstance().getWorld(active.dimensionId);
         if (world == null) return;
 
         boolean done;
@@ -132,18 +204,40 @@ public class SwscToolManager {
         }
     }
 
+    /** Same transform as {@link #rotate(int, int, int, Rotation)} but for entities, which aren't block-aligned. */
+    private static double[] rotate(double x, double y, double z, Rotation rotation) {
+        switch (rotation) {
+            case CLOCKWISE_90:        return new double[]{-z, y, x};
+            case CLOCKWISE_180:       return new double[]{-x, y, -z};
+            case COUNTERCLOCKWISE_90: return new double[]{z, y, -x};
+            default:                  return new double[]{x, y, z};
+        }
+    }
+
+    /** Degrees to add to an entity's stored yaw so it faces the same relative direction after rotation. */
+    private static float yawOffset(Rotation rotation) {
+        switch (rotation) {
+            case CLOCKWISE_90:        return 90f;
+            case CLOCKWISE_180:       return 180f;
+            case COUNTERCLOCKWISE_90: return -90f;
+            default:                  return 0f;
+        }
+    }
+
     // ---- Job base ----
 
     private abstract static class Job {
         final UUID playerUuid;
         final String playerName;
+        final int dimensionId;
         long startMs;
         long lastProgressMs;
         int cursor = 0;
 
-        Job(UUID playerUuid, String playerName) {
+        Job(UUID playerUuid, String playerName, int dimensionId) {
             this.playerUuid = playerUuid;
             this.playerName = playerName;
+            this.dimensionId = dimensionId;
         }
 
         void initialize() {}
@@ -171,16 +265,20 @@ public class SwscToolManager {
         private final BlockPos min, max;
         private final BlockPos playerPos;
         private final File outputFile;
+        private final boolean includeEntities;
         private int width, height, length, total;
 
         private final Map<String, Integer> palette = new LinkedHashMap<>();
         private short[] voxelIndices;
         private final List<int[]> teCoords = new ArrayList<>();
         private final List<NBTTagCompound> teNbts = new ArrayList<>();
+        private final List<double[]> entityPositions = new ArrayList<>();
+        private final List<NBTTagCompound> entityNbts = new ArrayList<>();
+        private boolean entitiesCaptured;
 
         ScanSaveJob(BlockPos pos1, BlockPos pos2, BlockPos playerPos,
-                    File outputFile, UUID playerUuid, String playerName) {
-            super(playerUuid, playerName);
+                    File outputFile, UUID playerUuid, String playerName, int dimensionId, boolean includeEntities) {
+            super(playerUuid, playerName, dimensionId);
             this.min = new BlockPos(
                     Math.min(pos1.getX(), pos2.getX()),
                     Math.min(pos1.getY(), pos2.getY()),
@@ -191,6 +289,7 @@ public class SwscToolManager {
                     Math.max(pos1.getZ(), pos2.getZ()));
             this.playerPos = playerPos;
             this.outputFile = outputFile;
+            this.includeEntities = includeEntities;
         }
 
         @Override
@@ -244,8 +343,28 @@ public class SwscToolManager {
                 }
                 cursor++;
             }
+            boolean blocksDone = cursor >= total;
+            if (blocksDone && includeEntities && !entitiesCaptured) {
+                captureEntities(world);
+                entitiesCaptured = true;
+            }
             sendProgress(total, "Scanning");
-            return cursor >= total;
+            return blocksDone;
+        }
+
+        /** One-shot (entity counts are tiny compared to block counts) — no tick budgeting needed. */
+        private void captureEntities(World world) {
+            AxisAlignedBB box = new AxisAlignedBB(min, max.add(1, 1, 1));
+            List<Entity> found = world.getEntitiesWithinAABB(Entity.class, box, null);
+            for (Entity e : found) {
+                if (e instanceof EntityPlayer) continue;
+                NBTTagCompound nbt = new NBTTagCompound();
+                if (!e.writeToNBTOptional(nbt)) continue;
+                entityPositions.add(new double[]{
+                        e.posX - min.getX(), e.posY - min.getY(), e.posZ - min.getZ(),
+                        e.rotationYaw, e.rotationPitch});
+                entityNbts.add(nbt);
+            }
         }
 
         @Override
@@ -256,7 +375,8 @@ public class SwscToolManager {
 
             int count = SwscSchematicIO.write(outputFile, width, height, length,
                     originOffsetX, originOffsetY, originOffsetZ,
-                    palette, voxelIndices, teCoords, teNbts);
+                    palette, voxelIndices, teCoords, teNbts,
+                    entityPositions, entityNbts);
 
             EntityPlayerMP player = FMLCommonHandler.instance()
                     .getMinecraftServerInstance().getPlayerList().getPlayerByUUID(playerUuid);
@@ -280,6 +400,9 @@ public class SwscToolManager {
         private final BlockPos anchor;
         private final Rotation rotation;
         private final boolean includeAir;
+        private final boolean includeEntities;
+        private final List<UUID> spawnedEntityUuids = new ArrayList<>();
+        private boolean entitiesSpawned;
 
         // includeAir mode pastes over the schematic's full width*height*length volume
         // (WorldEdit's default, no -a flag) instead of only the stored non-air voxels —
@@ -300,12 +423,13 @@ public class SwscToolManager {
         private boolean anyPlaced;
 
         PasteJob(SwscSchematic schematic, BlockPos anchor, Rotation rotation, boolean includeAir,
-                 UUID playerUuid, String playerName) {
-            super(playerUuid, playerName);
+                 boolean includeEntities, UUID playerUuid, String playerName, int dimensionId) {
+            super(playerUuid, playerName, dimensionId);
             this.schematic = schematic;
             this.anchor = anchor;
             this.rotation = rotation;
             this.includeAir = includeAir;
+            this.includeEntities = includeEntities;
         }
 
         @Override
@@ -389,8 +513,49 @@ public class SwscToolManager {
                 // same trick vanilla's Template uses to keep structures intact while loading.
                 world.getPendingBlockUpdates(new StructureBoundingBox(minX, minY, minZ, maxX, maxY, maxZ), true);
             }
+            boolean blocksDone = cursor >= total;
+            if (blocksDone && includeEntities && !entitiesSpawned) {
+                spawnEntities(world);
+                entitiesSpawned = true;
+            }
             sendProgress(total, "Pasting");
-            return cursor >= total;
+            return blocksDone;
+        }
+
+        /** One-shot (entity counts are tiny compared to block counts) — no tick budgeting needed. */
+        private void spawnEntities(World world) {
+            for (int i = 0; i < schematic.entityCount(); i++) {
+                NBTTagCompound raw = schematic.entityNbt[i];
+                if (raw == null) continue;
+                NBTTagCompound copy = raw.copy();
+                // Force a fresh identity per paste so re-pasting the same schematic (e.g. a new
+                // tutorial/house instance) never collides with a previously spawned copy.
+                copy.removeTag("UUID");
+                copy.removeTag("UUIDMost");
+                copy.removeTag("UUIDLeast");
+
+                Entity entity;
+                try {
+                    entity = EntityList.createEntityFromNBT(copy, world);
+                } catch (Exception e) {
+                    System.err.println("[SwscTool] Failed to recreate entity #" + i + " for "
+                            + playerName + ": " + e);
+                    continue;
+                }
+                if (entity == null) continue;
+
+                double rx = schematic.entityRelX[i] - schematic.originOffsetX;
+                double ry = schematic.entityRelY[i] - schematic.originOffsetY;
+                double rz = schematic.entityRelZ[i] - schematic.originOffsetZ;
+                double[] rotated = rotate(rx, ry, rz, rotation);
+                float yaw = schematic.entityYaw[i] + yawOffset(rotation);
+
+                entity.setLocationAndAngles(
+                        anchor.getX() + rotated[0], anchor.getY() + rotated[1], anchor.getZ() + rotated[2],
+                        yaw, schematic.entityPitch[i]);
+                world.spawnEntity(entity);
+                spawnedEntityUuids.add(entity.getUniqueID());
+            }
         }
 
         private void applyNbt(World world, BlockPos pos, NBTTagCompound nbt) {
@@ -413,7 +578,7 @@ public class SwscToolManager {
 
         @Override
         void onFinished() {
-            LAST_PASTE.put(playerUuid, new UndoData(savedPos, savedPrevState, savedPrevTe));
+            LAST_PASTE.put(playerUuid, new UndoData(savedPos, savedPrevState, savedPrevTe, dimensionId, spawnedEntityUuids));
 
             EntityPlayerMP player = FMLCommonHandler.instance()
                     .getMinecraftServerInstance().getPlayerList().getPlayerByUUID(playerUuid);
@@ -431,11 +596,16 @@ public class SwscToolManager {
         final BlockPos[] positions;
         final IBlockState[] prevStates;
         final NBTTagCompound[] prevTileNbt;
+        final int dimensionId;
+        final List<UUID> spawnedEntityUuids;
 
-        UndoData(BlockPos[] positions, IBlockState[] prevStates, NBTTagCompound[] prevTileNbt) {
+        UndoData(BlockPos[] positions, IBlockState[] prevStates, NBTTagCompound[] prevTileNbt,
+                 int dimensionId, List<UUID> spawnedEntityUuids) {
             this.positions = positions;
             this.prevStates = prevStates;
             this.prevTileNbt = prevTileNbt;
+            this.dimensionId = dimensionId;
+            this.spawnedEntityUuids = spawnedEntityUuids;
         }
     }
 
@@ -444,9 +614,10 @@ public class SwscToolManager {
 
         private int minX, minY, minZ, maxX, maxY, maxZ;
         private boolean anyPlaced;
+        private boolean entitiesRemoved;
 
         UndoJob(UndoData data, UUID playerUuid, String playerName) {
-            super(playerUuid, playerName);
+            super(playerUuid, playerName, data.dimensionId);
             this.data = data;
         }
 
@@ -485,8 +656,23 @@ public class SwscToolManager {
             if (anyPlaced) {
                 world.getPendingBlockUpdates(new StructureBoundingBox(minX, minY, minZ, maxX, maxY, maxZ), true);
             }
+            boolean blocksDone = cursor >= total;
+            if (blocksDone && !entitiesRemoved) {
+                removeSpawnedEntities(world);
+                entitiesRemoved = true;
+            }
             sendProgress(total, "Undoing");
-            return cursor >= total;
+            return blocksDone;
+        }
+
+        /** Removes only the entities this specific paste spawned (see PasteJob#spawnEntities). */
+        private void removeSpawnedEntities(World world) {
+            if (data.spawnedEntityUuids.isEmpty() || !(world instanceof WorldServer)) return;
+            WorldServer serverWorld = (WorldServer) world;
+            for (UUID uuid : data.spawnedEntityUuids) {
+                Entity entity = serverWorld.getEntityFromUuid(uuid);
+                if (entity != null) entity.setDead();
+            }
         }
 
         @Override
@@ -496,7 +682,79 @@ public class SwscToolManager {
             if (player == null) return;
             double elapsed = (System.currentTimeMillis() - startMs) / 1000.0;
             player.sendMessage(new TextComponentString(TextFormatting.GREEN
-                    + "Undo complete. " + data.positions.length + " blocks restored in "
+                    + "Undo complete. " + data.positions.length + " blocks restored"
+                    + (data.spawnedEntityUuids.isEmpty() ? "" : ", " + data.spawnedEntityUuids.size() + " entities removed")
+                    + " in " + String.format("%.1f", elapsed) + "s"));
+        }
+    }
+
+    // ---- Clear: fill a bounding box with air, tick-budgeted, no undo/snapshot ----
+
+    private static class ClearJob extends Job {
+        private final BlockPos min, max;
+        private int width, height, length, total;
+        private boolean entitiesCleared;
+
+        ClearJob(BlockPos pos1, BlockPos pos2, UUID playerUuid, String playerName, int dimensionId) {
+            super(playerUuid, playerName, dimensionId);
+            this.min = new BlockPos(
+                    Math.min(pos1.getX(), pos2.getX()),
+                    Math.min(pos1.getY(), pos2.getY()),
+                    Math.min(pos1.getZ(), pos2.getZ()));
+            this.max = new BlockPos(
+                    Math.max(pos1.getX(), pos2.getX()),
+                    Math.max(pos1.getY(), pos2.getY()),
+                    Math.max(pos1.getZ(), pos2.getZ()));
+        }
+
+        @Override
+        void initialize() {
+            width  = max.getX() - min.getX() + 1;
+            height = max.getY() - min.getY() + 1;
+            length = max.getZ() - min.getZ() + 1;
+            total = width * height * length;
+        }
+
+        @Override
+        boolean processTick(World world) {
+            int end = Math.min(cursor + CLEAR_BLOCKS_PER_TICK, total);
+            while (cursor < end) {
+                int x =  cursor % width;
+                int z = (cursor / width) % length;
+                int y =  cursor / (width * length);
+                BlockPos abs = min.add(x, y, z);
+                // flag 18 = 2 (send to clients) | 16 (no observer updates); neighbour
+                // notifications are skipped for the same reason PasteJob skips them.
+                world.setBlockState(abs, Blocks.AIR.getDefaultState(), 18);
+                cursor++;
+            }
+            boolean blocksDone = cursor >= total;
+            if (blocksDone && !entitiesCleared) {
+                clearEntities(world);
+                entitiesCleared = true;
+            }
+            sendProgress(total, "Clearing");
+            return blocksDone;
+        }
+
+        /** Removes every non-player entity left in the cleared box (e.g. leftover NPCs). */
+        private void clearEntities(World world) {
+            AxisAlignedBB box = new AxisAlignedBB(min, max.add(1, 1, 1));
+            List<Entity> found = world.getEntitiesWithinAABB(Entity.class, box, null);
+            for (Entity e : found) {
+                if (e instanceof EntityPlayer) continue;
+                e.setDead();
+            }
+        }
+
+        @Override
+        void onFinished() {
+            EntityPlayerMP player = FMLCommonHandler.instance()
+                    .getMinecraftServerInstance().getPlayerList().getPlayerByUUID(playerUuid);
+            if (player == null) return;
+            double elapsed = (System.currentTimeMillis() - startMs) / 1000.0;
+            player.sendMessage(new TextComponentString(TextFormatting.GREEN
+                    + "Clear complete. " + total + " blocks in "
                     + String.format("%.1f", elapsed) + "s"));
         }
     }

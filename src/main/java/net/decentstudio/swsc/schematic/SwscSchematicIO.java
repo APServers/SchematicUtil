@@ -21,9 +21,12 @@ import java.util.*;
  *   BLOCKS  : width*height*length x [ paletteIdx (1 or 2 bytes depending on palette size) ]
  *             (Y-outer, Z-mid, X-inner)
  *   TEs     : teCount(4) x [ relX(2) + relY(2) + relZ(2) + nbtLen(4) + nbt(bytes) ]  (version >= 2 only)
+ *   ENTITIES: entityCount(4) x [ relX(8) + relY(8) + relZ(8) + yaw(4) + pitch(4)
+ *             + nbtLen(4) + nbt(bytes) ]  (version >= 4 only)
  * <p>
  * Version 1/2 files (no stored origin offset — the original house-schematic format) are
  * read transparently; the origin then defaults to the selection's min corner (0,0,0).
+ * Version &lt; 4 files have no entity section (loaded with zero captured entities).
  * <p>
  * Pure (de)serialization only — no World access, so this never needs tick budgeting.
  */
@@ -43,6 +46,23 @@ public final class SwscSchematicIO {
                              int originOffsetX, int originOffsetY, int originOffsetZ,
                              Map<String, Integer> palette, short[] voxelIndices,
                              List<int[]> teCoords, List<NBTTagCompound> teNbts) {
+        return write(outputFile, width, height, length, originOffsetX, originOffsetY, originOffsetZ,
+                palette, voxelIndices, teCoords, teNbts,
+                Collections.emptyList(), Collections.emptyList());
+    }
+
+    /**
+     * Same as {@link #write(File, int, int, int, int, int, int, Map, short[], List, List)} but
+     * also writes captured entities (e.g. placed NPCs). entityPositions entries are
+     * {relX, relY, relZ, yaw, pitch} (double[5], relative to the min corner, same frame as the
+     * block coordinates); entityNbts is parallel to it.
+     * @return non-air block count written, or -1 on error
+     */
+    public static int write(File outputFile, int width, int height, int length,
+                             int originOffsetX, int originOffsetY, int originOffsetZ,
+                             Map<String, Integer> palette, short[] voxelIndices,
+                             List<int[]> teCoords, List<NBTTagCompound> teNbts,
+                             List<double[]> entityPositions, List<NBTTagCompound> entityNbts) {
         String[] byIndex = new String[palette.size()];
         for (Map.Entry<String, Integer> e : palette.entrySet()) byIndex[e.getValue()] = e.getKey();
 
@@ -57,7 +77,7 @@ public final class SwscSchematicIO {
                 new BufferedOutputStream(new FileOutputStream(outputFile)))) {
 
             out.write(new byte[]{'S', 'W', 'S', 'C'});
-            out.writeByte(3);
+            out.writeByte(4);
             out.writeInt(width);
             out.writeInt(height);
             out.writeInt(length);
@@ -94,6 +114,21 @@ public final class SwscSchematicIO {
                 out.write(nbtBytes);
             }
 
+            out.writeInt(entityNbts.size());
+            for (int i = 0; i < entityNbts.size(); i++) {
+                double[] pos = entityPositions.get(i);
+                out.writeDouble(pos[0]);
+                out.writeDouble(pos[1]);
+                out.writeDouble(pos[2]);
+                out.writeFloat((float) pos[3]);
+                out.writeFloat((float) pos[4]);
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                CompressedStreamTools.write(entityNbts.get(i), new DataOutputStream(baos));
+                byte[] nbtBytes = baos.toByteArray();
+                out.writeInt(nbtBytes.length);
+                out.write(nbtBytes);
+            }
+
         } catch (IOException e) {
             System.err.println("[SwscSchematicIO] Failed to write " + outputFile.getName() + ": " + e.getMessage());
             return -1;
@@ -103,7 +138,8 @@ public final class SwscSchematicIO {
                 + " " + width + "x" + height + "x" + length
                 + " palette=" + byIndex.length
                 + " non-air=" + nonAirCount
-                + " tile-entities=" + teNbts.size());
+                + " tile-entities=" + teNbts.size()
+                + " entities=" + entityNbts.size());
         return nonAirCount;
     }
 
@@ -143,7 +179,7 @@ public final class SwscSchematicIO {
                 return null;
             }
             byte version = in.readByte();
-            if (version < 1 || version > 3) {
+            if (version < 1 || version > 4) {
                 System.err.println("[SwscSchematicIO] Unsupported version " + version + " in " + file.getName());
                 return null;
             }
@@ -240,13 +276,45 @@ public final class SwscSchematicIO {
                 }
             }
 
+            double[] entityRelX = new double[0], entityRelY = new double[0], entityRelZ = new double[0];
+            float[] entityYaw = new float[0], entityPitch = new float[0];
+            NBTTagCompound[] entityNbt = new NBTTagCompound[0];
+
+            if (version >= 4) {
+                int entityCount = in.readInt();
+                entityRelX = new double[entityCount];
+                entityRelY = new double[entityCount];
+                entityRelZ = new double[entityCount];
+                entityYaw = new float[entityCount];
+                entityPitch = new float[entityCount];
+                entityNbt = new NBTTagCompound[entityCount];
+                for (int i = 0; i < entityCount; i++) {
+                    entityRelX[i] = in.readDouble();
+                    entityRelY[i] = in.readDouble();
+                    entityRelZ[i] = in.readDouble();
+                    entityYaw[i] = in.readFloat();
+                    entityPitch[i] = in.readFloat();
+                    int nbtLen = in.readInt();
+                    byte[] nbtBytes = new byte[nbtLen];
+                    in.readFully(nbtBytes);
+                    try {
+                        entityNbt[i] = CompressedStreamTools.read(
+                                new DataInputStream(new ByteArrayInputStream(nbtBytes)));
+                    } catch (Exception e) {
+                        System.err.println("[SwscSchematicIO] Failed to parse entity NBT #" + i + ": " + e.getMessage());
+                    }
+                }
+            }
+
             System.out.println("[SwscSchematicIO] Loaded " + file.getName()
                     + " v" + version
                     + " " + width + "x" + height + "x" + length
-                    + " palette=" + paletteSize + " non-air=" + count);
+                    + " palette=" + paletteSize + " non-air=" + count
+                    + " entities=" + entityNbt.length);
             return new SwscSchematic(width, height, length,
                     originOffsetX, originOffsetY, originOffsetZ,
-                    relX, relY, relZ, states, tileNbt);
+                    relX, relY, relZ, states, tileNbt,
+                    entityRelX, entityRelY, entityRelZ, entityYaw, entityPitch, entityNbt);
 
         } catch (IOException e) {
             System.err.println("[SwscSchematicIO] Failed to read " + file.getName() + ": " + e.getMessage());

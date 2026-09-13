@@ -33,7 +33,7 @@ public class SwscCommand extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/swsc <pos1|pos2|info|save <name>|load <name> [rotation] [x y z] [-a]|convert <name>|undo|list>";
+        return "/swsc <pos1|pos2|info|save <name> [-e]|load <name> [rotation] [x y z] [-a] [-e]|convert <name>|undo|list>";
     }
 
     @Override
@@ -93,19 +93,25 @@ public class SwscCommand extends CommandBase {
                     break;
                 }
                 String name = sanitize(args[1]);
+                boolean saveIncludeEntities = false;
+                for (int i = 2; i < args.length; i++) {
+                    if ("-e".equalsIgnoreCase(args[i])) saveIncludeEntities = true;
+                }
                 File outFile = schematicFile(server, name);
                 boolean queued = SwscToolManager.queueSave(
-                        p1, p2, player.getPosition(), outFile, player.getUniqueID(), player.getName());
+                        p1, p2, player.getPosition(), outFile, player.getUniqueID(), player.getName(),
+                        player.dimension, saveIncludeEntities);
                 if (!queued) {
                     msg(player, TextFormatting.RED, "You already have a schematic job running. Wait for it to finish.");
                     break;
                 }
-                msg(player, TextFormatting.YELLOW, "Saving " + name + ".swsch queued...");
+                msg(player, TextFormatting.YELLOW, "Saving " + name + ".swsch"
+                        + (saveIncludeEntities ? " (with entities)" : "") + " queued...");
                 break;
             }
             case "load": {
                 if (args.length < 2) {
-                    msg(player, TextFormatting.RED, "Usage: /swsc load <name> [rotation] [x y z] [-a]");
+                    msg(player, TextFormatting.RED, "Usage: /swsc load <name> [rotation] [x y z] [-a] [-e]");
                     break;
                 }
                 String name = args[1];
@@ -117,10 +123,13 @@ public class SwscCommand extends CommandBase {
 
                 // "-a" (matches WorldEdit's //paste -a) skips air instead of pasting it —
                 // can appear anywhere after the name. Default (no flag) pastes air too.
+                // "-e" spawns entities captured with the schematic (e.g. NPCs). Default off.
                 boolean includeAir = true;
+                boolean includeEntities = false;
                 List<String> rest = new ArrayList<>();
                 for (int i = 2; i < args.length; i++) {
                     if ("-a".equalsIgnoreCase(args[i])) includeAir = false;
+                    else if ("-e".equalsIgnoreCase(args[i])) includeEntities = true;
                     else rest.add(args[i]);
                 }
 
@@ -145,7 +154,7 @@ public class SwscCommand extends CommandBase {
                             parseInt(rest.get(2), 0, 255),
                             parseInt(rest.get(3), Integer.MIN_VALUE, Integer.MAX_VALUE));
                 } else if (extra != 0) {
-                    msg(player, TextFormatting.RED, "Usage: /swsc load <name> [rotation] [x y z] [-a]");
+                    msg(player, TextFormatting.RED, "Usage: /swsc load <name> [rotation] [x y z] [-a] [-e]");
                     break;
                 }
 
@@ -157,7 +166,8 @@ public class SwscCommand extends CommandBase {
                 warnUnresolved(player, file);
 
                 boolean queued = SwscToolManager.queuePaste(
-                        schem, anchor, rotation, includeAir, player.getUniqueID(), player.getName());
+                        schem, anchor, rotation, includeAir, player.getUniqueID(), player.getName(),
+                        player.dimension, includeEntities);
                 if (!queued) {
                     msg(player, TextFormatting.RED, "You already have a schematic job running. Wait for it to finish.");
                     break;
@@ -165,6 +175,7 @@ public class SwscCommand extends CommandBase {
                 int blockCount = includeAir ? schem.width * schem.height * schem.length : schem.nonAirCount();
                 msg(player, TextFormatting.YELLOW, "Loading " + file.getName() + " at " + fmt(anchor)
                         + " rotation=" + rotation + (includeAir ? "" : " (skipping air)")
+                        + (includeEntities ? " (+" + schem.entityCount() + " entities)" : "")
                         + " (" + blockCount + " blocks) queued...");
                 break;
             }
