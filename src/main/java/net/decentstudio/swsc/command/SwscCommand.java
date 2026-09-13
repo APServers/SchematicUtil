@@ -33,7 +33,7 @@ public class SwscCommand extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/swsc <pos1|pos2|info|save <name>|load <name> [rotation] [x y z]|convert <name>|list>";
+        return "/swsc <pos1|pos2|info|save <name>|load <name> [rotation] [x y z] [-a]|convert <name>|undo|list>";
     }
 
     @Override
@@ -105,7 +105,7 @@ public class SwscCommand extends CommandBase {
             }
             case "load": {
                 if (args.length < 2) {
-                    msg(player, TextFormatting.RED, "Usage: /swsc load <name> [rotation] [x y z]");
+                    msg(player, TextFormatting.RED, "Usage: /swsc load <name> [rotation] [x y z] [-a]");
                     break;
                 }
                 String name = args[1];
@@ -115,28 +115,37 @@ public class SwscCommand extends CommandBase {
                     break;
                 }
 
+                // "-a" (matches WorldEdit's //paste -a) skips air instead of pasting it —
+                // can appear anywhere after the name. Default (no flag) pastes air too.
+                boolean includeAir = true;
+                List<String> rest = new ArrayList<>();
+                for (int i = 2; i < args.length; i++) {
+                    if ("-a".equalsIgnoreCase(args[i])) includeAir = false;
+                    else rest.add(args[i]);
+                }
+
                 Rotation rotation = Rotation.NONE;
                 BlockPos anchor = player.getPosition();
-                int extra = args.length - 2;
+                int extra = rest.size();
                 if (extra == 1) {
-                    Rotation r = parseRotation(args[2]);
-                    if (r == null) { msg(player, TextFormatting.RED, "Unknown rotation: " + args[2]); break; }
+                    Rotation r = parseRotation(rest.get(0));
+                    if (r == null) { msg(player, TextFormatting.RED, "Unknown rotation: " + rest.get(0)); break; }
                     rotation = r;
                 } else if (extra == 3) {
                     anchor = new BlockPos(
-                            parseInt(args[2], Integer.MIN_VALUE, Integer.MAX_VALUE),
-                            parseInt(args[3], 0, 255),
-                            parseInt(args[4], Integer.MIN_VALUE, Integer.MAX_VALUE));
+                            parseInt(rest.get(0), Integer.MIN_VALUE, Integer.MAX_VALUE),
+                            parseInt(rest.get(1), 0, 255),
+                            parseInt(rest.get(2), Integer.MIN_VALUE, Integer.MAX_VALUE));
                 } else if (extra == 4) {
-                    Rotation r = parseRotation(args[2]);
-                    if (r == null) { msg(player, TextFormatting.RED, "Unknown rotation: " + args[2]); break; }
+                    Rotation r = parseRotation(rest.get(0));
+                    if (r == null) { msg(player, TextFormatting.RED, "Unknown rotation: " + rest.get(0)); break; }
                     rotation = r;
                     anchor = new BlockPos(
-                            parseInt(args[3], Integer.MIN_VALUE, Integer.MAX_VALUE),
-                            parseInt(args[4], 0, 255),
-                            parseInt(args[5], Integer.MIN_VALUE, Integer.MAX_VALUE));
+                            parseInt(rest.get(1), Integer.MIN_VALUE, Integer.MAX_VALUE),
+                            parseInt(rest.get(2), 0, 255),
+                            parseInt(rest.get(3), Integer.MIN_VALUE, Integer.MAX_VALUE));
                 } else if (extra != 0) {
-                    msg(player, TextFormatting.RED, "Usage: /swsc load <name> [rotation] [x y z]");
+                    msg(player, TextFormatting.RED, "Usage: /swsc load <name> [rotation] [x y z] [-a]");
                     break;
                 }
 
@@ -148,13 +157,15 @@ public class SwscCommand extends CommandBase {
                 warnUnresolved(player, file);
 
                 boolean queued = SwscToolManager.queuePaste(
-                        schem, anchor, rotation, player.getUniqueID(), player.getName());
+                        schem, anchor, rotation, includeAir, player.getUniqueID(), player.getName());
                 if (!queued) {
                     msg(player, TextFormatting.RED, "You already have a schematic job running. Wait for it to finish.");
                     break;
                 }
+                int blockCount = includeAir ? schem.width * schem.height * schem.length : schem.nonAirCount();
                 msg(player, TextFormatting.YELLOW, "Loading " + file.getName() + " at " + fmt(anchor)
-                        + " rotation=" + rotation + " (" + schem.nonAirCount() + " blocks) queued...");
+                        + " rotation=" + rotation + (includeAir ? "" : " (skipping air)")
+                        + " (" + blockCount + " blocks) queued...");
                 break;
             }
             case "convert": {
@@ -205,14 +216,23 @@ public class SwscCommand extends CommandBase {
                 }
                 break;
             }
+            case "undo": {
+                boolean queued = SwscToolManager.queueUndo(player.getUniqueID(), player.getName());
+                if (!queued) {
+                    msg(player, TextFormatting.RED, "Nothing to undo, or you already have a schematic job running.");
+                    break;
+                }
+                msg(player, TextFormatting.YELLOW, "Undoing last paste...");
+                break;
+            }
             case "list": {
                 File dir = schematicDir(server);
                 List<String> names = listNames(dir);
                 if (names.isEmpty()) {
-                    msg(player, TextFormatting.YELLOW, "No saved schematics.");
+                    msg(player, TextFormatting.YELLOW, "No saved schematics in " + dir.getAbsolutePath());
                     break;
                 }
-                msg(player, TextFormatting.YELLOW, "Schematics: " + String.join(", ", names));
+                msg(player, TextFormatting.YELLOW, dir.getAbsolutePath() + " -> " + String.join(", ", names));
                 break;
             }
             default:
@@ -224,7 +244,7 @@ public class SwscCommand extends CommandBase {
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender,
                                           String[] args, @Nullable BlockPos targetPos) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, "pos1", "pos2", "info", "save", "load", "convert", "list");
+            return getListOfStringsMatchingLastWord(args, "pos1", "pos2", "info", "save", "load", "convert", "undo", "list");
         }
         String sub = args[0].toLowerCase();
         if (args.length == 2 && ("load".equals(sub) || "save".equals(sub) || "convert".equals(sub))) {

@@ -63,9 +63,13 @@ public final class LegacyBlockResolver {
     static {
         DOUBLE_PLANT_VARIANT.put("sunflower", "sunflower");
         DOUBLE_PLANT_VARIANT.put("lilac", "syringa");
-        DOUBLE_PLANT_VARIANT.put("tall_grass", "grass");
-        DOUBLE_PLANT_VARIANT.put("large_fern", "fern");
-        DOUBLE_PLANT_VARIANT.put("rose_bush", "rose");
+        // BlockDoublePlant.EnumPlantType's real getName() for these three is "double_X", not
+        // "X" — "X" is only its unlocalized name, which happens to equal the property name for
+        // sunflower/syringa/paeonia but not for these. Using "X" here silently fails to match,
+        // leaving the block at its default state (SUNFLOWER).
+        DOUBLE_PLANT_VARIANT.put("tall_grass", "double_grass");
+        DOUBLE_PLANT_VARIANT.put("large_fern", "double_fern");
+        DOUBLE_PLANT_VARIANT.put("rose_bush", "double_rose");
         DOUBLE_PLANT_VARIANT.put("peony", "paeonia");
     }
 
@@ -78,6 +82,77 @@ public final class LegacyBlockResolver {
         EXACT_RENAMES.put("minecraft:snow_block", "minecraft:snow");
         EXACT_RENAMES.put("minecraft:snow", "minecraft:snow_layer");
         EXACT_RENAMES.put("minecraft:end_stone_bricks", "minecraft:end_bricks");
+        EXACT_RENAMES.put("minecraft:cobblestone_stairs", "minecraft:stone_stairs");
+        // Mossy cobblestone stairs/slabs didn't exist pre-1.13; approximate with plain cobblestone.
+        EXACT_RENAMES.put("minecraft:mossy_cobblestone_stairs", "minecraft:stone_stairs");
+        EXACT_RENAMES.put("minecraft:lily_pad", "minecraft:waterlily");
+        EXACT_RENAMES.put("minecraft:sugar_cane", "minecraft:reeds");
+        EXACT_RENAMES.put("minecraft:oak_pressure_plate", "minecraft:wooden_pressure_plate");
+        EXACT_RENAMES.put("minecraft:oak_button", "minecraft:wooden_button");
+        EXACT_RENAMES.put("minecraft:oak_door", "minecraft:wooden_door");
+        EXACT_RENAMES.put("minecraft:terracotta", "minecraft:hardened_clay");
+        // Oak was the only wood species fences/gates/trapdoors came in pre-1.13 — no species prefix.
+        EXACT_RENAMES.put("minecraft:oak_fence", "minecraft:fence");
+        EXACT_RENAMES.put("minecraft:oak_fence_gate", "minecraft:fence_gate");
+        EXACT_RENAMES.put("minecraft:oak_trapdoor", "minecraft:trapdoor");
+        EXACT_RENAMES.put("minecraft:melon", "minecraft:melon_block");
+        EXACT_RENAMES.put("minecraft:nether_bricks", "minecraft:nether_brick");
+        EXACT_RENAMES.put("minecraft:red_nether_bricks", "minecraft:red_nether_brick");
+        EXACT_RENAMES.put("minecraft:stone_bricks", "minecraft:stonebrick");
+        // "Smooth stone" as a standalone full block didn't exist before 1.14 (only as a stone
+        // slab's top texture) — approximate with plain stone, its closest gameplay equivalent.
+        EXACT_RENAMES.put("minecraft:smooth_stone", "minecraft:stone");
+    }
+
+    /** Stone brick finishes, which are meta values on "minecraft:stonebrick" in 1.12.2. */
+    private static final Map<String, Integer> STONE_BRICK_VARIANT_META = new LinkedHashMap<>();
+    static {
+        STONE_BRICK_VARIANT_META.put("mossy_stone_bricks", 1);
+        STONE_BRICK_VARIANT_META.put("cracked_stone_bricks", 2);
+        STONE_BRICK_VARIANT_META.put("chiseled_stone_bricks", 3);
+    }
+
+    /** Dirt finishes, which are meta values on "minecraft:dirt" in 1.12.2. */
+    private static final Map<String, Integer> DIRT_VARIANT_META = new LinkedHashMap<>();
+    static {
+        DIRT_VARIANT_META.put("coarse_dirt", 1);
+        DIRT_VARIANT_META.put("podzol", 2);
+    }
+
+    /** stone's polished/rock variants, which are meta values on "minecraft:stone" in 1.12.2, not separate blocks. */
+    private static final Map<String, Integer> STONE_VARIANT_META = new LinkedHashMap<>();
+    static {
+        STONE_VARIANT_META.put("granite", 1);
+        STONE_VARIANT_META.put("polished_granite", 2);
+        STONE_VARIANT_META.put("diorite", 3);
+        STONE_VARIANT_META.put("polished_diorite", 4);
+        STONE_VARIANT_META.put("andesite", 5);
+        STONE_VARIANT_META.put("polished_andesite", 6);
+    }
+
+    /** Sandstone/red sandstone finishes, which are meta values on their base block in 1.12.2. */
+    private static final Map<String, Integer> SANDSTONE_VARIANT_META = new LinkedHashMap<>();
+    static {
+        SANDSTONE_VARIANT_META.put("chiseled_sandstone", 1);
+        SANDSTONE_VARIANT_META.put("smooth_sandstone", 2);
+    }
+    private static final Map<String, Integer> RED_SANDSTONE_VARIANT_META = new LinkedHashMap<>();
+    static {
+        RED_SANDSTONE_VARIANT_META.put("chiseled_red_sandstone", 1);
+        RED_SANDSTONE_VARIANT_META.put("smooth_red_sandstone", 2);
+    }
+
+    /** Single-height grass/fern, which are meta values on "minecraft:tallgrass" in 1.12.2. */
+    private static final Map<String, Integer> TALLGRASS_META = new LinkedHashMap<>();
+    static {
+        TALLGRASS_META.put("short_grass", 1);
+        TALLGRASS_META.put("fern", 2);
+    }
+
+    /** 1.12.2 spells this color "silver"; 1.13+ renamed it "light_gray" everywhere, including glazed terracotta block names. */
+    private static final Map<String, String> COLOR_NAME_1_12 = new LinkedHashMap<>();
+    static {
+        COLOR_NAME_1_12.put("light_gray", "silver");
     }
 
     /** "Item"/"Data" for a potted plant's contents, keyed by the "potted_" suffix. */
@@ -144,6 +219,8 @@ public final class LegacyBlockResolver {
         STONE_SLAB_META.put("nether_brick",   new int[]{6, 1});
         STONE_SLAB_META.put("quartz",         new int[]{7, 1});
         STONE_SLAB_META.put("red_sandstone",  new int[]{0, 2});
+        // Mossy cobblestone slabs didn't exist pre-1.13; approximate with plain cobblestone.
+        STONE_SLAB_META.put("mossy_cobblestone", new int[]{3, 1});
     }
 
     public static Resolved resolve(String paletteKey, Set<String> unresolvedLog) {
@@ -170,6 +247,58 @@ public final class LegacyBlockResolver {
 
     private static Resolved resolveSpecial(String name, Map<String, String> props) {
         String shortName = name.startsWith("minecraft:") ? name.substring("minecraft:".length()) : name;
+
+        Integer stoneMeta = STONE_VARIANT_META.get(shortName);
+        if (stoneMeta != null) return exact("minecraft:stone", props, stoneMeta);
+
+        Integer sandstoneMeta = SANDSTONE_VARIANT_META.get(shortName);
+        if (sandstoneMeta != null) return exact("minecraft:sandstone", props, sandstoneMeta);
+
+        Integer redSandstoneMeta = RED_SANDSTONE_VARIANT_META.get(shortName);
+        if (redSandstoneMeta != null) return exact("minecraft:red_sandstone", props, redSandstoneMeta);
+
+        Integer tallgrassMeta = TALLGRASS_META.get(shortName);
+        if (tallgrassMeta != null) return exact("minecraft:tallgrass", props, tallgrassMeta);
+
+        Integer stoneBrickMeta = STONE_BRICK_VARIANT_META.get(shortName);
+        if (stoneBrickMeta != null) return exact("minecraft:stonebrick", props, stoneBrickMeta);
+
+        Integer dirtMeta = DIRT_VARIANT_META.get(shortName);
+        if (dirtMeta != null) return exact("minecraft:dirt", props, dirtMeta);
+
+        if (shortName.equals("comparator")) {
+            boolean powered = "true".equals(props.get("powered"));
+            Block block = Block.getBlockFromName(powered ? "minecraft:powered_comparator" : "minecraft:unpowered_comparator");
+            if (block != null) return new Resolved(applyPropsGenerically(block.getDefaultState(), props), null);
+        }
+
+        if (shortName.equals("mushroom_stem")) {
+            // Both mushroom colors share one "bark" texture for the stem, carried by the
+            // brown_mushroom_block registry entry regardless of which color grew it.
+            int meta = allFacesTrue(props) ? 15 /* ALL_STEM */ : 10 /* STEM */;
+            return exact("minecraft:brown_mushroom_block", props, meta);
+        }
+        if (shortName.equals("brown_mushroom_block") || shortName.equals("red_mushroom_block")) {
+            return exact("minecraft:" + shortName, props, mushroomCapMeta(props));
+        }
+
+        // Signs lost their wood-type storage entirely in 1.12.2 (only one sign block exists,
+        // no variant property) — orientation still carries over, species doesn't.
+        if (shortName.endsWith("_wall_sign")) {
+            Block wallSign = Block.getBlockFromName("minecraft:wall_sign");
+            if (wallSign != null) return new Resolved(applyPropsGenerically(wallSign.getDefaultState(), props), null);
+        }
+        if (shortName.endsWith("_sign")) {
+            Block standingSign = Block.getBlockFromName("minecraft:standing_sign");
+            if (standingSign != null) return new Resolved(applyPropsGenerically(standingSign.getDefaultState(), props), null);
+        }
+
+        if (shortName.endsWith("_glazed_terracotta")) {
+            String color = shortName.substring(0, shortName.length() - "_glazed_terracotta".length());
+            String legacyColor = COLOR_NAME_1_12.getOrDefault(color, color);
+            Block glazed = Block.getBlockFromName("minecraft:" + legacyColor + "_glazed_terracotta");
+            if (glazed != null) return new Resolved(applyPropsGenerically(glazed.getDefaultState(), props), null);
+        }
 
         if (shortName.startsWith("potted_")) {
             Object[] contents = POTTED_CONTENTS.get(shortName.substring("potted_".length()));
@@ -280,12 +409,56 @@ public final class LegacyBlockResolver {
         return null;
     }
 
+    private static boolean isTrue(Map<String, String> props, String face) {
+        return "true".equals(props.get(face));
+    }
+
+    private static boolean allFacesTrue(Map<String, String> props) {
+        return isTrue(props, "up") && isTrue(props, "down") && isTrue(props, "north")
+                && isTrue(props, "south") && isTrue(props, "east") && isTrue(props, "west");
+    }
+
+    /**
+     * Translates the six per-face cap/pore booleans (1.13+) into BlockHugeMushroom's single
+     * "variant" meta (1.12.2): 0 = pores on every face, 14 = cap on every face, 1-9 = a
+     * north/south x east/west corner-or-edge cap position (always with up=true, down=false).
+     * Anything that doesn't fit that shape falls back to the nearest of those.
+     */
+    private static int mushroomCapMeta(Map<String, String> props) {
+        boolean up = isTrue(props, "up"), down = isTrue(props, "down");
+        boolean n = isTrue(props, "north"), s = isTrue(props, "south");
+        boolean e = isTrue(props, "east"), w = isTrue(props, "west");
+
+        if (up && down && n && s && e && w) return 14; // ALL_OUTSIDE
+        if (!up && !down && !n && !s && !e && !w) return 0; // ALL_INSIDE
+        if (!up) return n || s || e || w ? 14 : 0;
+
+        if (n && w) return 1;
+        if (n && e) return 3;
+        if (s && w) return 7;
+        if (s && e) return 9;
+        if (n) return 2;
+        if (s) return 8;
+        if (w) return 4;
+        if (e) return 6;
+        return 5; // CENTER — cap on top only
+    }
+
     private static Resolved tryWoodFamily(String shortName, String wood, Map<String, String> props) {
         if (shortName.equals(wood + "_planks")) return buildVariantBlock("minecraft:planks", "variant", wood, props);
         if (shortName.equals(wood + "_sapling")) return buildVariantBlock("minecraft:sapling", "type", wood, props);
         if (shortName.equals(wood + "_log")) {
             String target = indexOf(WOOD_TYPES_LOG2, wood) >= 0 ? "minecraft:log2" : "minecraft:log";
             return buildVariantBlock(target, "variant", wood, props);
+        }
+        if (shortName.equals(wood + "_wood")) {
+            // "_wood" (bark on all 6 sides) IS a real 1.12.2 state: log with axis=none, not
+            // the x/y/z orientation carried in the .schem's own "axis" property — that one
+            // describes which two faces have rings, which "_wood" doesn't have at all.
+            String target = indexOf(WOOD_TYPES_LOG2, wood) >= 0 ? "minecraft:log2" : "minecraft:log";
+            Resolved r = buildVariantBlock(target, "variant", wood, Collections.emptyMap());
+            if (r == null) return null;
+            return new Resolved(setPropertyByName(r.state, "axis", "none"), null);
         }
         if (shortName.equals(wood + "_leaves")) {
             String target = indexOf(WOOD_TYPES_LOG2, wood) >= 0 ? "minecraft:leaves2" : "minecraft:leaves";

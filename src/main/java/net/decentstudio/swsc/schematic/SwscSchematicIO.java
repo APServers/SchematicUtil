@@ -99,7 +99,7 @@ public final class SwscSchematicIO {
             return -1;
         }
 
-        System.out.println("[SwscSchematicIO] Saved " + outputFile.getName()
+        System.out.println("[SwscSchematicIO] Saved " + outputFile.getAbsolutePath()
                 + " " + width + "x" + height + "x" + length
                 + " palette=" + byIndex.length
                 + " non-air=" + nonAirCount

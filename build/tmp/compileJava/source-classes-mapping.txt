@@ -6,6 +6,8 @@ net/decentstudio/swsc/tool/SwscToolManager.java
  net.decentstudio.swsc.tool.SwscToolManager$Job
  net.decentstudio.swsc.tool.SwscToolManager$PasteJob
  net.decentstudio.swsc.tool.SwscToolManager$ScanSaveJob
+ net.decentstudio.swsc.tool.SwscToolManager$UndoData
+ net.decentstudio.swsc.tool.SwscToolManager$UndoJob
 net/decentstudio/swsc/SwscMod.java
  net.decentstudio.swsc.SwscMod
 net/decentstudio/swsc/schematic/McEditSchematicLoader.java
