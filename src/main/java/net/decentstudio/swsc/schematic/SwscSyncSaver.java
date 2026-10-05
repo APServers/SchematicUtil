@@ -73,6 +73,7 @@ public final class SwscSyncSaver {
                         nbt.removeTag("masterPos");
                         nbt.setLong("_swsc_masterRelPos", new BlockPos(dmx, dmy, dmz).toLong());
                     }
+                    ScriptBlockGraphs.embed(world, abs, nbt);
                     teCoords.add(new int[]{x, y, z});
                     teNbts.add(nbt);
                 }

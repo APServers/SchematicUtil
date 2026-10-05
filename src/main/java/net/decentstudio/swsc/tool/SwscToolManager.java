@@ -1,5 +1,6 @@
 package net.decentstudio.swsc.tool;
 
+import net.decentstudio.swsc.schematic.ScriptBlockGraphs;
 import net.decentstudio.swsc.schematic.SwscSchematic;
 import net.decentstudio.swsc.schematic.SwscSchematicIO;
 import net.minecraft.block.state.IBlockState;
@@ -337,6 +338,7 @@ public class SwscToolManager {
                             nbt.removeTag("masterPos");
                             nbt.setLong("_swsc_masterRelPos", new BlockPos(dmx, dmy, dmz).toLong());
                         }
+                        ScriptBlockGraphs.embed(world, abs, nbt);
                         teCoords.add(new int[]{x, y, z});
                         teNbts.add(nbt);
                     }
@@ -486,6 +488,7 @@ public class SwscToolManager {
                 TileEntity existingTe = world.getTileEntity(pos);
                 if (existingTe != null) {
                     savedPrevTe[cursor] = existingTe.writeToNBT(new NBTTagCompound());
+                    ScriptBlockGraphs.embed(world, pos, savedPrevTe[cursor]);
                 }
 
                 IBlockState state = rawState.withRotation(rotation);
@@ -572,6 +575,7 @@ public class SwscToolManager {
                 copy.setLong("masterPos", pos.add(rotatedDelta).toLong());
                 copy.removeTag("_swsc_masterRelPos");
             }
+            ScriptBlockGraphs.restore(world, pos, copy);
             te.readFromNBT(copy);
             world.markChunkDirty(pos, te);
         }
@@ -636,6 +640,7 @@ public class SwscToolManager {
                         copy.setInteger("x", pos.getX());
                         copy.setInteger("y", pos.getY());
                         copy.setInteger("z", pos.getZ());
+                        ScriptBlockGraphs.restore(world, pos, copy);
                         te.readFromNBT(copy);
                         world.markChunkDirty(pos, te);
                     }

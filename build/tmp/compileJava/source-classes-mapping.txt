@@ -1,8 +1,11 @@
+net/decentstudio/swsc/schematic/ScriptBlockGraphs.java
+ net.decentstudio.swsc.schematic.ScriptBlockGraphs
 net/decentstudio/swsc/schematic/SwscSchematic.java
  net.decentstudio.swsc.schematic.SwscSchematic
 net/decentstudio/swsc/tool/SwscToolManager.java
  net.decentstudio.swsc.tool.SwscToolManager
  net.decentstudio.swsc.tool.SwscToolManager$1
+ net.decentstudio.swsc.tool.SwscToolManager$ClearJob
  net.decentstudio.swsc.tool.SwscToolManager$Job
  net.decentstudio.swsc.tool.SwscToolManager$PasteJob
  net.decentstudio.swsc.tool.SwscToolManager$ScanSaveJob
