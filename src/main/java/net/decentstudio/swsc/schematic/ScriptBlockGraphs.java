@@ -16,7 +16,7 @@ import java.io.IOException;
  * <p>
  * The tile entity's own NBT does not contain the scripts. It only lists {@code GraphIds} and
  * {@code SourceX/Y/Z} (the position the graphs live at); the graphs themselves are files in
- * {@code <world>/data/scriptable_blocks/<x>_<y>_<z>/graph_<id>.dat}. Vanilla Ctrl+Pick Block
+ * {@code <world>/data/scriptable_blocks/[DIM<dim>/]<x>_<y>_<z>/graph_<id>.dat}. Vanilla Ctrl+Pick Block
  * works because the copy is placed in the same world, so the block can copy the files from
  * {@code SourceX/Y/Z} on its first tick. A schematic can be pasted elsewhere (another world,
  * another server), where that source no longer exists.
@@ -93,9 +93,13 @@ public final class ScriptBlockGraphs {
                 && id.indexOf(':') < 0 && id.indexOf('\0') < 0;
     }
 
+    // Same layout as narutoscripts' BlockGraphFileManager: overworld at the root, other dimensions
+    // in a DIM<id> subfolder. Keep the two in sync.
     private static File blockDir(World world, BlockPos pos) {
-        File dir = new File(new File(new File(world.getSaveHandler().getWorldDirectory(), "data"), FOLDER),
-                pos.getX() + "_" + pos.getY() + "_" + pos.getZ());
+        File root = new File(new File(world.getSaveHandler().getWorldDirectory(), "data"), FOLDER);
+        int dim = world.provider.getDimension();
+        if (dim != 0) root = new File(root, "DIM" + dim);
+        File dir = new File(root, pos.getX() + "_" + pos.getY() + "_" + pos.getZ());
         dir.mkdirs();
         return dir;
     }
