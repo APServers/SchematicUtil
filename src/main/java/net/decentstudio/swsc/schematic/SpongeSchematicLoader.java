@@ -79,9 +79,21 @@ public final class SpongeSchematicLoader {
 
         byte[] blockDataBytes = data.getByteArray(blockDataKey);
         int total = width * height * length;
-        int[] paletteIdxByVoxel = new int[total];
+        int widthLength = width * length;
+
+        // Decode the varint block-data stream and discard air in the same pass — an
+        // intermediate "one int per voxel" buffer (regardless of air) is the single biggest
+        // allocation for a large/dense schematic and has blown the heap on big builds before
+        // any actual (non-air) block count is even known.
+        IntBuffer tmpX = new IntBuffer();
+        IntBuffer tmpY = new IntBuffer();
+        IntBuffer tmpZ = new IntBuffer();
+        List<IBlockState>    tmpSt      = new ArrayList<>();
+        List<NBTTagCompound> tmpExtraTe = new ArrayList<>();
+        Map<BlockPos, Integer> posToIdx = new HashMap<>();
+
         int cursor = 0;
-        for (int i = 0; i < total; i++) {
+        for (int index = 0; index < total; index++) {
             int value = 0, shift = 0;
             while (true) {
                 if (cursor >= blockDataBytes.length) {
@@ -93,43 +105,26 @@ public final class SpongeSchematicLoader {
                 if ((b & 0x80) == 0) break;
                 shift += 7;
             }
-            paletteIdxByVoxel[i] = value;
-        }
 
-        List<Integer>     tmpX  = new ArrayList<>();
-        List<Integer>     tmpY  = new ArrayList<>();
-        List<Integer>     tmpZ  = new ArrayList<>();
-        List<IBlockState> tmpSt = new ArrayList<>();
-        List<Integer>     tmpPaletteIdx = new ArrayList<>();
-        Map<BlockPos, Integer> posToIdx = new HashMap<>();
-
-        for (int index = 0; index < total; index++) {
-            int y =  index / (width * length);
-            int z = (index % (width * length)) / width;
-            int x =  index % width;
-
-            int pIdx = paletteIdxByVoxel[index];
-            LegacyBlockResolver.Resolved resolved = (pIdx >= 0 && pIdx < palette.length) ? palette[pIdx] : null;
+            LegacyBlockResolver.Resolved resolved = (value >= 0 && value < palette.length) ? palette[value] : null;
             if (resolved == null || resolved.state.getBlock() == net.minecraft.init.Blocks.AIR) continue;
+
+            int y =  index / widthLength;
+            int z = (index % widthLength) / width;
+            int x =  index % width;
 
             posToIdx.put(new BlockPos(x, y, z), tmpSt.size());
             tmpX.add(x); tmpY.add(y); tmpZ.add(z);
             tmpSt.add(resolved.state);
-            tmpPaletteIdx.add(pIdx);
+            tmpExtraTe.add(resolved.extraTeFields);
         }
 
         int count = tmpSt.size();
-        int[] relX = new int[count];
-        int[] relY = new int[count];
-        int[] relZ = new int[count];
-        IBlockState[]    states  = new IBlockState[count];
+        int[] relX = tmpX.toArray();
+        int[] relY = tmpY.toArray();
+        int[] relZ = tmpZ.toArray();
+        IBlockState[]    states  = tmpSt.toArray(new IBlockState[0]);
         NBTTagCompound[] tileNbt = new NBTTagCompound[count];
-        for (int i = 0; i < count; i++) {
-            relX[i] = tmpX.get(i);
-            relY[i] = tmpY.get(i);
-            relZ[i] = tmpZ.get(i);
-            states[i] = tmpSt.get(i);
-        }
 
         String teListKey = data.hasKey("BlockEntities", 9) ? "BlockEntities" : (data.hasKey("TileEntities", 9) ? "TileEntities" : null);
         if (teListKey != null) {
@@ -157,13 +152,13 @@ public final class SpongeSchematicLoader {
         }
 
         for (int i = 0; i < count; i++) {
-            LegacyBlockResolver.Resolved resolved = palette[tmpPaletteIdx.get(i)];
-            if (resolved.extraTeFields == null) continue;
+            NBTTagCompound extraTeFields = tmpExtraTe.get(i);
+            if (extraTeFields == null) continue;
             if (tileNbt[i] == null) {
-                tileNbt[i] = resolved.extraTeFields.copy();
+                tileNbt[i] = extraTeFields.copy();
             } else {
-                for (String key : resolved.extraTeFields.getKeySet()) {
-                    tileNbt[i].setTag(key, resolved.extraTeFields.getTag(key));
+                for (String key : extraTeFields.getKeySet()) {
+                    tileNbt[i].setTag(key, extraTeFields.getTag(key));
                 }
             }
         }
@@ -178,5 +173,20 @@ public final class SpongeSchematicLoader {
         return new SwscSchematic(width, height, length,
                 originOffsetX, originOffsetY, originOffsetZ,
                 relX, relY, relZ, states, tileNbt);
+    }
+
+    /** Growable int[] — avoids the per-element boxing overhead of ArrayList&lt;Integer&gt; for large builds. */
+    private static final class IntBuffer {
+        private int[] data = new int[1024];
+        private int size = 0;
+
+        void add(int value) {
+            if (size == data.length) data = Arrays.copyOf(data, data.length * 2);
+            data[size++] = value;
+        }
+
+        int[] toArray() {
+            return Arrays.copyOf(data, size);
+        }
     }
 }

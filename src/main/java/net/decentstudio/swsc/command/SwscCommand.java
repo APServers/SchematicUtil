@@ -33,7 +33,7 @@ public class SwscCommand extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/swsc <pos1|pos2|info|save <name> [-e]|load <name> [rotation] [x y z] [-a] [-e]|convert <name>|undo|list>";
+        return "/swsc <pos1|pos2|info|save <name> [-e] [-legacy]|load <name> [rotation] [x y z] [-a] [-e]|convert <name>|undo|fixlight|list>";
     }
 
     @Override
@@ -94,18 +94,26 @@ public class SwscCommand extends CommandBase {
                 }
                 String name = sanitize(args[1]);
                 boolean saveIncludeEntities = false;
+                boolean saveLegacy = false;
                 for (int i = 2; i < args.length; i++) {
                     if ("-e".equalsIgnoreCase(args[i])) saveIncludeEntities = true;
+                    else if ("-legacy".equalsIgnoreCase(args[i])) saveLegacy = true;
                 }
-                File outFile = schematicFile(server, name);
+                SwscToolManager.SaveFormat format = saveLegacy
+                        ? SwscToolManager.SaveFormat.MCEDIT : SwscToolManager.SaveFormat.SWSCH;
+                File outFile = saveLegacy ? legacySchematicFile(server, name) : schematicFile(server, name);
+                if (saveLegacy && saveIncludeEntities) {
+                    msg(player, TextFormatting.GOLD, "-e is ignored for -legacy: .schematic can't store captured entities.");
+                    saveIncludeEntities = false;
+                }
                 boolean queued = SwscToolManager.queueSave(
                         p1, p2, player.getPosition(), outFile, player.getUniqueID(), player.getName(),
-                        player.dimension, saveIncludeEntities);
+                        player.dimension, saveIncludeEntities, format);
                 if (!queued) {
                     msg(player, TextFormatting.RED, "You already have a schematic job running. Wait for it to finish.");
                     break;
                 }
-                msg(player, TextFormatting.YELLOW, "Saving " + name + ".swsch"
+                msg(player, TextFormatting.YELLOW, "Saving " + outFile.getName()
                         + (saveIncludeEntities ? " (with entities)" : "") + " queued...");
                 break;
             }
@@ -236,6 +244,22 @@ public class SwscCommand extends CommandBase {
                 msg(player, TextFormatting.YELLOW, "Undoing last paste...");
                 break;
             }
+            case "fixlight": {
+                BlockPos p1 = SwscSelectionManager.getPos1(player.getUniqueID());
+                BlockPos p2 = SwscSelectionManager.getPos2(player.getUniqueID());
+                if (p1 == null || p2 == null) {
+                    msg(player, TextFormatting.RED, "Set pos1 and pos2 first.");
+                    break;
+                }
+                boolean queued = SwscToolManager.queueFixLight(
+                        p1, p2, player.getUniqueID(), player.getName(), player.dimension);
+                if (!queued) {
+                    msg(player, TextFormatting.RED, "You already have a schematic job running. Wait for it to finish.");
+                    break;
+                }
+                msg(player, TextFormatting.YELLOW, "Fixing lighting in selection (stale shadow fix)...");
+                break;
+            }
             case "list": {
                 File dir = schematicDir(server);
                 List<String> names = listNames(dir);
@@ -255,7 +279,7 @@ public class SwscCommand extends CommandBase {
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender,
                                           String[] args, @Nullable BlockPos targetPos) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, "pos1", "pos2", "info", "save", "load", "convert", "undo", "list");
+            return getListOfStringsMatchingLastWord(args, "pos1", "pos2", "info", "save", "load", "convert", "undo", "fixlight", "list");
         }
         String sub = args[0].toLowerCase();
         if (args.length == 2 && ("load".equals(sub) || "save".equals(sub) || "convert".equals(sub))) {
@@ -263,6 +287,9 @@ public class SwscCommand extends CommandBase {
         }
         if (args.length == 3 && "load".equals(sub)) {
             return getListOfStringsMatchingLastWord(args, "none", "cw90", "cw180", "ccw90");
+        }
+        if (args.length >= 3 && "save".equals(sub)) {
+            return getListOfStringsMatchingLastWord(args, "-e", "-legacy");
         }
         return Collections.emptyList();
     }
@@ -300,6 +327,10 @@ public class SwscCommand extends CommandBase {
 
     private static File schematicFile(MinecraftServer server, String name) {
         return new File(schematicDir(server), name + ".swsch");
+    }
+
+    private static File legacySchematicFile(MinecraftServer server, String name) {
+        return new File(schematicDir(server), name + ".schematic");
     }
 
     private File resolveSchematicFile(MinecraftServer server, String name) {

@@ -1,5 +1,6 @@
 package net.decentstudio.swsc.tool;
 
+import net.decentstudio.swsc.schematic.McEditSchematicWriter;
 import net.decentstudio.swsc.schematic.ScriptBlockGraphs;
 import net.decentstudio.swsc.schematic.SwscSchematic;
 import net.decentstudio.swsc.schematic.SwscSchematicIO;
@@ -38,9 +39,10 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public class SwscToolManager {
 
-    private static final int SAVE_VOXELS_PER_TICK  = 4000;
-    private static final int PASTE_BLOCKS_PER_TICK = 2000;
-    private static final int CLEAR_BLOCKS_PER_TICK = 4000;
+    private static final int SAVE_VOXELS_PER_TICK    = 4000;
+    private static final int PASTE_BLOCKS_PER_TICK   = 2000;
+    private static final int CLEAR_BLOCKS_PER_TICK   = 4000;
+    private static final int FIXLIGHT_BLOCKS_PER_TICK = 4000;
     private static final long PROGRESS_INTERVAL_MS  = 2000;
 
     private static final Queue<Job> QUEUE = new ConcurrentLinkedQueue<>();
@@ -73,10 +75,28 @@ public class SwscToolManager {
     public static boolean queueSave(BlockPos pos1, BlockPos pos2, BlockPos playerPos,
                                      File outputFile, UUID playerUuid, String playerName,
                                      int dimensionId, boolean includeEntities) {
+        return queueSave(pos1, pos2, playerPos, outputFile, playerUuid, playerName,
+                dimensionId, includeEntities, SaveFormat.SWSCH);
+    }
+
+    /**
+     * Same as {@link #queueSave(BlockPos, BlockPos, BlockPos, File, UUID, String, int, boolean)}
+     * but lets the caller pick the on-disk format. {@link SaveFormat#MCEDIT} writes a legacy
+     * MCEdit/WorldEdit .schematic file instead of this tool's own .swsch format; includeEntities
+     * is ignored for that format (see {@link net.decentstudio.swsc.schematic.McEditSchematicWriter}).
+     * @return false if this player already has a schematic job queued/running
+     */
+    public static boolean queueSave(BlockPos pos1, BlockPos pos2, BlockPos playerPos,
+                                     File outputFile, UUID playerUuid, String playerName,
+                                     int dimensionId, boolean includeEntities, SaveFormat format) {
         if (!PENDING_PLAYERS.add(playerUuid)) return false;
-        QUEUE.add(new ScanSaveJob(pos1, pos2, playerPos, outputFile, playerUuid, playerName, dimensionId, includeEntities));
+        QUEUE.add(new ScanSaveJob(pos1, pos2, playerPos, outputFile, playerUuid, playerName,
+                dimensionId, includeEntities, format));
         return true;
     }
+
+    /** On-disk format a {@link #queueSave} job writes. */
+    public enum SaveFormat { SWSCH, MCEDIT }
 
     /** @return false if this player already has a schematic job queued/running */
     public static boolean queuePaste(SwscSchematic schematic, BlockPos anchor, Rotation rotation,
@@ -137,6 +157,27 @@ public class SwscToolManager {
     public static boolean queueClear(BlockPos pos1, BlockPos pos2, UUID playerUuid, String playerName, int dimensionId) {
         if (!PENDING_PLAYERS.add(playerUuid)) return false;
         QUEUE.add(new ClearJob(pos1, pos2, playerUuid, playerName, dimensionId));
+        return true;
+    }
+
+    /**
+     * Forces a proper light recheck ({@code World#checkLight}) for every block in a bounding
+     * box (inclusive), tick-budgeted like save/paste. Fixes the classic 1.12.2 "stale shadow"
+     * bug after a fast paste: {@link PasteJob} sets blocks with neighbour-notify disabled (flag
+     * 18, to stop gravity blocks/torches reacting mid-paste), so each block's light got checked
+     * before all its neighbours existed yet and the result can stick until something forces a
+     * recheck — normally a player breaking/placing a block nearby. This does the same recheck,
+     * now that the whole structure is in place, without touching any actual blocks.
+     * @return false if this player already has a schematic job queued/running
+     */
+    public static boolean queueFixLight(BlockPos pos1, BlockPos pos2, UUID playerUuid, String playerName) {
+        return queueFixLight(pos1, pos2, playerUuid, playerName, 0);
+    }
+
+    /** Same as {@link #queueFixLight(BlockPos, BlockPos, UUID, String)} but targets a specific dimension. */
+    public static boolean queueFixLight(BlockPos pos1, BlockPos pos2, UUID playerUuid, String playerName, int dimensionId) {
+        if (!PENDING_PLAYERS.add(playerUuid)) return false;
+        QUEUE.add(new FixLightJob(pos1, pos2, playerUuid, playerName, dimensionId));
         return true;
     }
 
@@ -267,6 +308,7 @@ public class SwscToolManager {
         private final BlockPos playerPos;
         private final File outputFile;
         private final boolean includeEntities;
+        private final SaveFormat format;
         private int width, height, length, total;
 
         private final Map<String, Integer> palette = new LinkedHashMap<>();
@@ -278,7 +320,8 @@ public class SwscToolManager {
         private boolean entitiesCaptured;
 
         ScanSaveJob(BlockPos pos1, BlockPos pos2, BlockPos playerPos,
-                    File outputFile, UUID playerUuid, String playerName, int dimensionId, boolean includeEntities) {
+                    File outputFile, UUID playerUuid, String playerName, int dimensionId,
+                    boolean includeEntities, SaveFormat format) {
             super(playerUuid, playerName, dimensionId);
             this.min = new BlockPos(
                     Math.min(pos1.getX(), pos2.getX()),
@@ -291,6 +334,7 @@ public class SwscToolManager {
             this.playerPos = playerPos;
             this.outputFile = outputFile;
             this.includeEntities = includeEntities;
+            this.format = format;
         }
 
         @Override
@@ -375,10 +419,14 @@ public class SwscToolManager {
             int originOffsetY = playerPos.getY() - min.getY();
             int originOffsetZ = playerPos.getZ() - min.getZ();
 
-            int count = SwscSchematicIO.write(outputFile, width, height, length,
-                    originOffsetX, originOffsetY, originOffsetZ,
-                    palette, voxelIndices, teCoords, teNbts,
-                    entityPositions, entityNbts);
+            int count = format == SaveFormat.MCEDIT
+                    ? McEditSchematicWriter.write(outputFile, width, height, length,
+                            originOffsetX, originOffsetY, originOffsetZ,
+                            palette, voxelIndices, teCoords, teNbts)
+                    : SwscSchematicIO.write(outputFile, width, height, length,
+                            originOffsetX, originOffsetY, originOffsetZ,
+                            palette, voxelIndices, teCoords, teNbts,
+                            entityPositions, entityNbts);
 
             EntityPlayerMP player = FMLCommonHandler.instance()
                     .getMinecraftServerInstance().getPlayerList().getPlayerByUUID(playerUuid);
@@ -760,6 +808,58 @@ public class SwscToolManager {
             double elapsed = (System.currentTimeMillis() - startMs) / 1000.0;
             player.sendMessage(new TextComponentString(TextFormatting.GREEN
                     + "Clear complete. " + total + " blocks in "
+                    + String.format("%.1f", elapsed) + "s"));
+        }
+    }
+
+    // ---- FixLight: re-runs World#checkLight over a bounding box, tick-budgeted, no block changes ----
+
+    private static class FixLightJob extends Job {
+        private final BlockPos min, max;
+        private int width, height, length, total;
+
+        FixLightJob(BlockPos pos1, BlockPos pos2, UUID playerUuid, String playerName, int dimensionId) {
+            super(playerUuid, playerName, dimensionId);
+            this.min = new BlockPos(
+                    Math.min(pos1.getX(), pos2.getX()),
+                    Math.min(pos1.getY(), pos2.getY()),
+                    Math.min(pos1.getZ(), pos2.getZ()));
+            this.max = new BlockPos(
+                    Math.max(pos1.getX(), pos2.getX()),
+                    Math.max(pos1.getY(), pos2.getY()),
+                    Math.max(pos1.getZ(), pos2.getZ()));
+        }
+
+        @Override
+        void initialize() {
+            width  = max.getX() - min.getX() + 1;
+            height = max.getY() - min.getY() + 1;
+            length = max.getZ() - min.getZ() + 1;
+            total = width * height * length;
+        }
+
+        @Override
+        boolean processTick(World world) {
+            int end = Math.min(cursor + FIXLIGHT_BLOCKS_PER_TICK, total);
+            while (cursor < end) {
+                int x =  cursor % width;
+                int z = (cursor / width) % length;
+                int y =  cursor / (width * length);
+                world.checkLight(min.add(x, y, z));
+                cursor++;
+            }
+            sendProgress(total, "Fixing light");
+            return cursor >= total;
+        }
+
+        @Override
+        void onFinished() {
+            EntityPlayerMP player = FMLCommonHandler.instance()
+                    .getMinecraftServerInstance().getPlayerList().getPlayerByUUID(playerUuid);
+            if (player == null) return;
+            double elapsed = (System.currentTimeMillis() - startMs) / 1000.0;
+            player.sendMessage(new TextComponentString(TextFormatting.GREEN
+                    + "Light fixed for " + total + " blocks in "
                     + String.format("%.1f", elapsed) + "s"));
         }
     }

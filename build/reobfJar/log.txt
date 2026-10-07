@@ -1,4 +1,4 @@
-Args: "--in-jar", "A:\ShippudenWorld Reps\HouseSchematicUtil\build\libs\swsc-2.0.0.jar", "--out-jar", "A:\ShippudenWorld Reps\HouseSchematicUtil\build\reobfJar\output.jar", "--srg-in", "A:\ShippudenWorld Reps\HouseSchematicUtil\build\createMcpToSrg\output.tsrg", "--live"
+Args: "--in-jar", "D:\SWRepo\SchematicUtil\build\libs\swsc-2.0.0.jar", "--out-jar", "D:\SWRepo\SchematicUtil\build\reobfJar\output.jar", "--srg-in", "D:\SWRepo\SchematicUtil\build\createMcpToSrg\output.tsrg", "--live"
 Classpath: C:\Users\admin\.gradle\caches\forge_gradle\maven_downloader\net\md-5\SpecialSource\1.9.0\SpecialSource-1.9.0-shaded.jar
 Classpath: C:\Users\admin\.gradle\caches\forge_gradle\minecraft_user_repo\net\minecraftforge\forge\1.12.2-14.23.5.2860_mapped_snapshot_20171003-1.12\forge-1.12.2-14.23.5.2860_mapped_snapshot_20171003-1.12-recomp.jar
 Classpath: C:\Users\admin\.gradle\caches\forge_gradle\minecraft_repo\versions\1.12.2\client-extra.jar
@@ -60,7 +60,7 @@ Classpath: C:\Users\admin\.gradle\caches\modules-2\files-2.1\org.lwjgl.lwjgl\lwj
 Classpath: C:\Users\admin\.gradle\caches\modules-2\files-2.1\org.lwjgl.lwjgl\lwjgl-platform\2.9.4-nightly-20150209\b04f3ee8f5e43fa3b162981b50bb72fe1acabb33\lwjgl-platform-2.9.4-nightly-20150209.jar
 Classpath: C:\Users\admin\.gradle\caches\modules-2\files-2.1\com.mojang\text2speech\1.10.3\48fd510879dff266c3815947de66e3d4809f8668\text2speech-1.10.3.jar
 Classpath: C:\Users\admin\.gradle\caches\modules-2\files-2.1\org.codehaus.plexus\plexus-utils\3.1.0\60eecb6f15abdb1c653ad80abaac6fe188b3feaa\plexus-utils-3.1.0.jar
-WorkDir: A:\ShippudenWorld Reps\HouseSchematicUtil\build\reobfJar
+WorkDir: D:\SWRepo\SchematicUtil\build\reobfJar
 Main: net.md_5.specialsource.SpecialSource
 ====================================
 Loading mappings
@@ -73,13 +73,13 @@ Loading mappings... 50%
 0 packages, 3344 classes, 11915 fields, 20817 methods
 Remapping final jar
 Remapping jar...  3%
-Remapping jar... 10%
+Remapping jar... 12%
 Remapping jar... 21%
-Remapping jar... 31%
+Remapping jar... 32%
 Remapping jar... 41%
-Remapping jar... 52%
+Remapping jar... 50%
 Remapping jar... 62%
-Remapping jar... 72%
-Remapping jar... 83%
-Remapping jar... 93%
+Remapping jar... 71%
+Remapping jar... 82%
+Remapping jar... 91%
 Remapping jar... 100%
